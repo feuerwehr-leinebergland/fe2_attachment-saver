@@ -7,12 +7,16 @@ function markAsRead($imapConnection, $emailNumber): void {
 }
 
 function run(): void {
-    try{
-        echo sprintf('Connecting to mail server...%s', PHP_EOL);
+    try {
         $config = include('config.php');
+
+        if(!file_exists($config['save_attachments_to'])) {
+            mkdir($config['save_attachments_to'], 777, true);
+        }
 
         $pathSeparator = $config['path_separator'];
 
+        echo sprintf('Connecting to mail server...%s', PHP_EOL);
         $imapConnection = imap_open(sprintf('{%s:%s/imap%s}INBOX',
             $config['mailbox_to_check']['imap_hostname'],
             $config['mailbox_to_check']['imap_port'],
@@ -36,8 +40,9 @@ function run(): void {
             throw new Exception(sprintf("Unable to write passphrase file!"));
         }
 
-        $command = sprintf('"%s" --allow-secret-key-import --import "%s"',
-            $config['path_to_gpg_application'] . 'gpg.exe',
+        $command = sprintf('"%s" --pinentry-mode loopback --passphrase-file="%s" --allow-secret-key-import --import "%s"',
+            trim($config['path_to_gpg_application'], $pathSeparator) . $pathSeparator . 'gpg.exe',
+            $passwordFile,
             $config['private_key']['file']);
         exec($command, $output, $exitCode);
         if ($exitCode !== 0) {
@@ -115,7 +120,52 @@ function run(): void {
 
                     if ($attachments[$i]['is_attachment']) {
                         $attachments[$i]['attachment'] = imap_fetchbody($imapConnection, $emailNumber, $i + 1);
-                        if ($structure->parts[$i]->encoding == 3) {
+
+                        if($structure->parts[$i]->encoding == 0) {
+                            $fileName = trim($config['working_directory'], $pathSeparator) . $pathSeparator . $attachments[$i]['filename'] ?? $attachments[$i]['name'];
+                            $bytesWritten = file_put_contents($fileName, $attachments[$i]['attachment']);
+                            if ($bytesWritten === false) {
+                                echo sprintf('Error: Unable to write file "%s".%s', $fileName, PHP_EOL);
+                                continue;
+                            }
+
+                            $emailFile = trim($config['working_directory'], $pathSeparator) . $pathSeparator . 'decrypted.eml';
+                            $command = sprintf('"%s" --pinentry-mode loopback --passphrase-file="%s" --yes --always-trust --output "%s" --decrypt "%s"',
+                                trim($config['path_to_gpg_application'], $pathSeparator) . $pathSeparator . 'gpg.exe',
+                                $passwordFile,
+                                $emailFile,
+                                $fileName);
+                            exec($command, $output, $exitCode);
+                            if ($exitCode !== 0) {
+                                print_r($output);
+                                throw new Exception(sprintf("Attachment decryption failed with exit code %s", $exitCode));
+                            }
+
+                            $emailContent = file_get_contents($emailFile);
+                            $mimeEmail = mailparse_msg_create();
+                            mailparse_msg_parse($mimeEmail, $emailContent);
+                            if ($mimeEmail === FALSE) {
+                                throw new Exception(sprintf("Unable to parse mail %s!%s", $emailNumber, PHP_EOL));
+                            }
+
+                            foreach (mailparse_msg_get_structure($mimeEmail) as $mailPart) {
+                                $mailPartContent = mailparse_msg_get_part_data(mailparse_msg_get_part($mimeEmail, $mailPart));
+                                if (isset($mailPartContent['headers']['content-disposition']) &&
+                                    strpos($mailPartContent['headers']['content-disposition'], 'attachment') !== false &&
+                                    strpos($mailPartContent['headers']['content-type'], 'application/pdf') !== false) {
+                                    $mimePdf = substr($emailContent, $mailPartContent['starting-pos-body'], $mailPartContent['ending-pos-body'] - $mailPartContent['starting-pos-body']);
+                                    $mimePdf = base64_decode($mimePdf);
+                                    $pdfFileName = trim($config['save_attachments_to'], $pathSeparator) . $pathSeparator . $mailPartContent['disposition-filename'];
+                                    $pdfFile = fopen($pdfFileName, "w+");
+                                    fwrite($pdfFile, $mimePdf);
+                                    fclose($pdfFile);
+                                    echo sprintf('Saved %s!%s', $pdfFileName, PHP_EOL);
+                                }
+                            }
+                            mailparse_msg_free($mimeEmail);
+
+                            continue;
+                        } elseif ($structure->parts[$i]->encoding == 3) {
                             $attachments[$i]['attachment'] = base64_decode($attachments[$i]['attachment']);
                         } elseif ($structure->parts[$i]->encoding == 4) {
                             $attachments[$i]['attachment'] = quoted_printable_decode($attachments[$i]['attachment']);
@@ -123,48 +173,12 @@ function run(): void {
                             $attachments[$i]['attachment'] = quoted_printable_decode($attachments[$i]['attachment']);
                         }
 
-                        $fileName = trim($config['working_directory'], $pathSeparator) . $pathSeparator . $attachments[$i]['filename'] ?? $attachments[$i]['name'];
+                        $fileName = trim($config['save_attachments_to'], $pathSeparator) . $pathSeparator . $attachments[$i]['filename'] ?? $attachments[$i]['name'];
                         $bytesWritten = file_put_contents($fileName, $attachments[$i]['attachment']);
                         if ($bytesWritten === false) {
                             echo sprintf('Error: Unable to write file "%s".%s', $fileName, PHP_EOL);
                             continue;
                         }
-
-                        $emailFile = trim($config['working_directory'], $pathSeparator) . $pathSeparator . 'decrypted.eml';
-                        $command = sprintf('"%s" --pinentry-mode loopback --passphrase-file="%s" --yes --always-trust --output "%s" --decrypt "%s"',
-                            $config['path_to_gpg_application'] . 'gpg.exe',
-                            $passwordFile,
-                            $emailFile,
-                            $fileName);
-                        exec($command, $output, $exitCode);
-                        if ($exitCode !== 0) {
-                            print_r($output);
-                            throw new Exception(sprintf("Attachment decryption failed with exit code %s", $exitCode));
-                        }
-
-                        $emailContent = file_get_contents($emailFile);
-                        $mimeEmail = mailparse_msg_create();
-                        mailparse_msg_parse($mimeEmail, $emailContent);
-                        if ($mimeEmail === FALSE) {
-                            throw new Exception(sprintf("Unable to parse mail %s!%s", $emailNumber, PHP_EOL));
-                        }
-
-                        foreach (mailparse_msg_get_structure($mimeEmail) as $mailPart) {
-                            $mailPartContent = mailparse_msg_get_part_data(mailparse_msg_get_part($mimeEmail, $mailPart));
-                            if (isset($mailPartContent['headers']['content-disposition']) &&
-                                strpos($mailPartContent['headers']['content-disposition'], 'attachment') !== false &&
-                                strpos($mailPartContent['headers']['content-type'], 'application/pdf') !== false) {
-                                $mimePdf = substr($emailContent, $mailPartContent['starting-pos-body'], $mailPartContent['ending-pos-body'] - $mailPartContent['starting-pos-body']);
-                                $mimePdf = base64_decode($mimePdf);
-                                $pdfFileName = trim($config['save_attachments_to'], $pathSeparator) . $pathSeparator . $mailPartContent['disposition-filename'];
-                                $pdfFile = fopen($pdfFileName, "w+");
-                                fwrite($pdfFile, $mimePdf);
-                                fclose($pdfFile);
-                                echo sprintf('Saved %s!%s', $pdfFileName, PHP_EOL);
-                            }
-                        }
-
-                        mailparse_msg_free($mimeEmail);
                     }
                 }
             }
