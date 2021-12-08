@@ -10,7 +10,7 @@ Daher ist dieses Skript entstanden, um das Postfach zu überwachen, auszulesen, 
 ## Abhängigkeiten
 - [GnuPG](https://gnupg.org/ftp/gcrypt/binary/gnupg-w32-2.3.3_20211012.exe) (GNU Privacy Guard)
 - [Mailparse](https://windows.php.net/downloads/pecl/releases/mailparse/3.1.2/php_mailparse-3.1.2-7.3-nts-vc15-x64.zip) (PHP Extension)
-- [PHP 7.3](https://www.php.net/distributions/php-7.3.33.tar.gz) (Hypertext Preprocessor)
+- [PHP 7.3](https://windows.php.net/downloads/releases/php-7.3.33-nts-Win32-VC15-x64.zip) (Hypertext Preprocessor)
 
 ## Installation
 
