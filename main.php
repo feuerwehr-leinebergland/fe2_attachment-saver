@@ -72,12 +72,16 @@ function run(): void {
                     continue;
                 }
 
-                $result = preg_match("/.* <(.*)>/", $emailDetail[0]->from, $matches);
-                if($result !== 1) {
-                    echo sprintf('Warning: Unable to get sender of email %s.%s', $emailNumber, PHP_EOL);
-                    continue;
+                if (strpos($emailDetail[0]->from, '<')) {
+                    $result = preg_match("/.* <(.*)>/", $emailDetail[0]->from, $matches);
+                    if($result !== 1) {
+                        echo sprintf('Warning: Unable to get sender of email %s.%s', $emailNumber, PHP_EOL);
+                        continue;
+                    }
+                    $sender = $matches[1];
+                } else {
+                    $sender = $emailDetail[0]->from;
                 }
-                $sender = $matches[1];
                 if (!in_array($sender, $config['sender_email_addresses'])) {
                     echo sprintf('Marking mail %s as read, since sender "%s" is not whitelisted!%s', $emailNumber, $sender, PHP_EOL);
                     markAsRead($imapConnection, $emailNumber);
@@ -162,6 +166,7 @@ function run(): void {
                                     echo sprintf('Saved %s!%s', $pdfFileName, PHP_EOL);
                                 }
                             }
+
                             mailparse_msg_free($mimeEmail);
 
                             continue;
