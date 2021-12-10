@@ -6,18 +6,21 @@ function markAsRead($imapConnection, $emailNumber): void {
     }
 }
 
-function getAttachments($structure, &$attachments) {
+function getAttachments($structure, array &$attachments, bool $inline) {
     for ($i = 0; $i < count($structure->parts); $i++) {
+        $part = $structure->parts[$i];
+
         $isAttachment = false;
         $entry = [
             'filename' => '',
             'name' => '',
             'attachment' => '',
-            'encoding' => $structure->parts[$i]->encoding
+            'encoding' => $part->encoding,
+            'inline' => $inline,
         ];
 
-        if ($structure->parts[$i]->ifdparameters) {
-            foreach ($structure->parts[$i]->dparameters as $object) {
+        if ($part->ifdparameters) {
+            foreach ($part->dparameters as $object) {
                 if (strtolower($object->attribute) == 'filename') {
                     $isAttachment = true;
                     $entry['filename'] = $object->value;
@@ -25,8 +28,8 @@ function getAttachments($structure, &$attachments) {
             }
         }
 
-        if ($structure->parts[$i]->ifparameters) {
-            foreach ($structure->parts[$i]->parameters as $object) {
+        if ($part->ifparameters) {
+            foreach ($part->parameters as $object) {
                 if (strtolower($object->attribute) == 'name') {
                     $isAttachment = true;
                     $entry['name'] = $object->value;
@@ -38,8 +41,8 @@ function getAttachments($structure, &$attachments) {
             $attachments[] = $entry;
         }
 
-        if(isset($structure->parts[$i]->parts)) {
-            getAttachments($structure->parts[$i], $attachments);
+        if(isset($part->parts)) {
+            getAttachments($part, $attachments, true);
         }
     }
 
@@ -137,9 +140,9 @@ function run(): void {
 
                 echo sprintf('Getting attachments...%s', PHP_EOL);
                 $attachments = [];
-                getAttachments($structure, $attachments);
+                getAttachments($structure, $attachments, false);
                 foreach($attachments as $attachment) {
-                    $attachment['attachment'] = imap_fetchbody($imapConnection, $emailNumber, 2);
+                    $attachment['attachment'] = imap_fetchbody($imapConnection, $emailNumber, $attachment['inline'] ? 1 : 2);
 
                     if($attachment['encoding'] == 0) {
                         $fileName = trim($config['working_directory'], $pathSeparator) . $pathSeparator . $attachment['filename'] ?? $attachment['name'];
@@ -179,7 +182,7 @@ function run(): void {
                                 $pdfFile = fopen($pdfFileName, "w+");
                                 fwrite($pdfFile, $mimePdf);
                                 fclose($pdfFile);
-                                echo sprintf('Saved %s!%s', $pdfFileName, PHP_EOL);
+                                echo sprintf('Saved encrypted file %s!%s', $pdfFileName, PHP_EOL);
                             }
                         }
 
@@ -200,6 +203,7 @@ function run(): void {
                         echo sprintf('Error: Unable to write file "%s".%s', $fileName, PHP_EOL);
                         continue;
                     }
+                    echo sprintf('Saved file %s!%s', $fileName, PHP_EOL);
                 }
             }
 
