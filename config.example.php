@@ -18,5 +18,6 @@ return [
     'save_attachments_to' => 'C:\\path\\to\\attachments',
     'working_directory' => 'C:\\path\\to\\working-directory',
     'path_to_gpg_application' => 'C:\\Program Files (x86)\\GnuPG\\bin\\',
-    'path_separator' => '\\'
+    'path_separator' => '\\',
+    'force_reconnect' => false
 ];

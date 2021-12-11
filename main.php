@@ -49,6 +49,20 @@ function getAttachments($structure, array &$attachments, bool $inline) {
     return $attachments;
 }
 
+function connect($config) {
+    echo sprintf('Connecting to mail server...%s', PHP_EOL);
+    $imapConnection = imap_open(sprintf('{%s:%s/imap%s}INBOX',
+            $config['mailbox_to_check']['imap_hostname'],
+            $config['mailbox_to_check']['imap_port'],
+            $config['mailbox_to_check']['imap_options']),
+            $config['mailbox_to_check']['imap_email_address'],
+            $config['mailbox_to_check']['imap_password']);
+    if ($imapConnection === false) {
+        throw new Exception('Unable to connect to mailbox!');
+    }
+    return $imapConnection;
+}
+
 function run(): void {
     try {
         $config = include('config.php');
@@ -58,17 +72,8 @@ function run(): void {
         }
 
         $pathSeparator = $config['path_separator'];
+        $forceReconnect = $config['force_reconnect'];
 
-        echo sprintf('Connecting to mail server...%s', PHP_EOL);
-        $imapConnection = imap_open(sprintf('{%s:%s/imap%s}INBOX',
-            $config['mailbox_to_check']['imap_hostname'],
-            $config['mailbox_to_check']['imap_port'],
-            $config['mailbox_to_check']['imap_options']),
-            $config['mailbox_to_check']['imap_email_address'],
-            $config['mailbox_to_check']['imap_password']);
-        if ($imapConnection === false) {
-            throw new Exception('Unable to connect to mailbox!');
-        }
         $interval = $config['check_interval_in_seconds'];
 
         echo sprintf('Setting up private key...%s', PHP_EOL);
@@ -93,9 +98,17 @@ function run(): void {
             throw new Exception(sprintf("Unable import private key. Exit code %s", $exitCode));
         }
 
-        $informed = false;
-        echo sprintf('Fetching mails...%s', PHP_EOL);
+        $imapConnection = null;
+
         while (true) {
+            echo sprintf('Fetching mails...%s', PHP_EOL);
+			$informed = false;
+			if ($forceReconnect) {
+                if ($imapConnection) {
+                    imap_close($imapConnection);
+                }
+                $imapConnection = connect($config);
+            }
             $emails = imap_search($imapConnection, 'UNSEEN');
             if (!$emails) {
                 if (!$informed) {
