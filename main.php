@@ -176,10 +176,11 @@ function run(): void {
                         }
 
                         $emailFile = trim($config['working_directory'], $pathSeparator) . $pathSeparator . 'decrypted.eml';
-                        $command = sprintf('"%s" --pinentry-mode loopback --passphrase-file="%s" --yes --always-trust --output "%s" --decrypt "%s"',
+                        $command = sprintf('"%s" --pinentry-mode loopback --passphrase-file="%s" --yes --always-trust --output "%s" %s --decrypt "%s"',
                             trim($config['path_to_gpg_application'], $pathSeparator) . $pathSeparator . 'gpg.exe',
                             $passwordFile,
                             $emailFile,
+                            isset($config['sender_public_key']) ? "" : "--skip-verify",
                             $fileName);
                         exec($command, $output, $exitCode);
                         if ($exitCode !== 0) {
