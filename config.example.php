@@ -1,7 +1,7 @@
 <?php
 return [
     'check_interval_in_seconds' => 1,
-	'force_reconnect' => false,
+    'force_reconnect' => false,
     'mailbox_to_check' => [
         'imap_hostname' => 'example.com',
         'imap_email_address' => 'user@example.com',
