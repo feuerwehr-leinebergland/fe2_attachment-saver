@@ -1,4 +1,17 @@
 <?php
+function connect($config) {
+    $imapConnection = imap_open(sprintf('{%s:%s/imap%s}INBOX',
+            $config['mailbox_to_check']['imap_hostname'],
+            $config['mailbox_to_check']['imap_port'],
+            $config['mailbox_to_check']['imap_options']),
+            $config['mailbox_to_check']['imap_email_address'],
+            $config['mailbox_to_check']['imap_password']);
+    if ($imapConnection === false) {
+        throw new Exception('Unable to connect to mailbox!');
+    }
+    return $imapConnection;
+}
+
 function markAsRead($imapConnection, $emailNumber): void {
     $status = imap_setflag_full($imapConnection, $emailNumber, "\\Seen");
     if (!$status) {
@@ -58,20 +71,13 @@ function run(): void {
         }
 
         $pathSeparator = $config['path_separator'];
-
-        echo sprintf('Connecting to mail server...%s', PHP_EOL);
-        $imapConnection = imap_open(sprintf('{%s:%s/imap%s}INBOX',
-            $config['mailbox_to_check']['imap_hostname'],
-            $config['mailbox_to_check']['imap_port'],
-            $config['mailbox_to_check']['imap_options']),
-            $config['mailbox_to_check']['imap_email_address'],
-            $config['mailbox_to_check']['imap_password']);
-        if ($imapConnection === false) {
-            throw new Exception('Unable to connect to mailbox!');
-        }
+		$forceReconnect = $config['force_reconnect'];
         $interval = $config['check_interval_in_seconds'];
+		
+		echo sprintf('Connecting to mail server...%s', PHP_EOL);
+		$imapConnection = connect($config);
 
-        echo sprintf('Setting up private key...%s', PHP_EOL);
+        echo sprintf('Setting up keys...%s', PHP_EOL);
         $fingerprint = file_get_contents($config['private_key']['file']);
         if ($fingerprint === false) {
             throw new Exception('Unable read private key!');
@@ -90,12 +96,29 @@ function run(): void {
         exec($command, $output, $exitCode);
         if ($exitCode !== 0) {
             print_r($output);
-            throw new Exception(sprintf("Unable import private key. Exit code %s", $exitCode));
+            throw new Exception(sprintf("Unable to import private key. Exit code %s", $exitCode));
+        }
+
+        if(isset($config['sender_public_key'])) {
+            $command = sprintf('"%s" --import "%s"',
+            trim($config['path_to_gpg_application'], $pathSeparator) . $pathSeparator . 'gpg.exe',
+            $config['sender_public_key']);
+            exec($command, $output, $exitCode);
+            if ($exitCode !== 0) {
+                print_r($output);
+                throw new Exception(sprintf("Unable to import sender public key. Exit code %s", $exitCode));
+            }
         }
 
         $informed = false;
         echo sprintf('Fetching mails...%s', PHP_EOL);
         while (true) {
+			if ($forceReconnect) {
+				if ($imapConnection) {
+					imap_close($imapConnection);
+				}
+				$imapConnection = connect($config);
+			}
             $emails = imap_search($imapConnection, 'UNSEEN');
             if (!$emails) {
                 if (!$informed) {
@@ -138,9 +161,9 @@ function run(): void {
                     continue;
                 }
 
-                echo sprintf('Getting attachments...%s', PHP_EOL);
                 $attachments = [];
                 getAttachments($structure, $attachments, false);
+                echo sprintf('Found %s attachments.%s', count($attachments), PHP_EOL);
                 foreach($attachments as $attachment) {
                     $attachment['attachment'] = imap_fetchbody($imapConnection, $emailNumber, $attachment['inline'] ? 1 : 2);
 
@@ -175,7 +198,7 @@ function run(): void {
                             $mailPartContent = mailparse_msg_get_part_data(mailparse_msg_get_part($mimeEmail, $mailPart));
                             if (isset($mailPartContent['headers']['content-disposition']) &&
                                 strpos($mailPartContent['headers']['content-disposition'], 'attachment') !== false &&
-                                strpos($mailPartContent['headers']['content-type'], 'application/pdf') !== false) {
+                                strpos($mailPartContent['headers']['content-type'], 'application') !== false) {
                                 $mimePdf = substr($emailContent, $mailPartContent['starting-pos-body'], $mailPartContent['ending-pos-body'] - $mailPartContent['starting-pos-body']);
                                 $mimePdf = base64_decode($mimePdf);
                                 $pdfFileName = trim($config['save_attachments_to'], $pathSeparator) . $pathSeparator . $mailPartContent['disposition-filename'];
