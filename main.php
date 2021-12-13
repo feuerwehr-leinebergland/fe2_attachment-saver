@@ -165,7 +165,7 @@ function run(): void {
                 getAttachments($structure, $attachments, false);
                 echo sprintf('Found %s attachments.%s', count($attachments), PHP_EOL);
                 foreach($attachments as $attachment) {
-                    $attachment['attachment'] = imap_fetchbody($imapConnection, $emailNumber, $attachment['inline'] ? 1 : 2);
+                    $attachment['attachment'] = imap_fetchbody($imapConnection, $emailNumber, $attachment['inline'] ? $attachment['encoding'] == 0 ? "1" : "1.2" : "2");
 
                     if($attachment['encoding'] == 0) {
                         $fileName = trim($config['working_directory'], $pathSeparator) . $pathSeparator . $attachment['filename'] ?? $attachment['name'];
