@@ -1,6 +1,7 @@
 <?php
 return [
     'check_interval_in_seconds' => 1,
+	'force_reconnect' => false,
     'mailbox_to_check' => [
         'imap_hostname' => 'example.com',
         'imap_email_address' => 'user@example.com',
@@ -12,6 +13,7 @@ return [
         'file' => 'C:\\path\\to\\private.key',
         'passphrase' => 'password'
     ],
+    'sender_public_key' => 'C:\\path\\to\\public.key',
     'sender_email_addresses' => [
       'mail@example.com'
     ],
